@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum BookStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BookType {
+  PUBLISHED
+  UNPUBLISHED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(USER)
+  approved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  books  Book[]
+  events Event[]
+}
+
+model Scholar {
+  id         String   @id @default(uuid())
+  name       String
+  biography  String?
+  pictureUrl String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  books Book[]
+}
+
+model Book {
+  id           String     @id @default(uuid())
+  title        String
+  description  String?
+  coverUrl     String?
+  type         BookType   @default(UNPUBLISHED)
+  status       BookStatus @default(PENDING)
+  readCount    Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  scholarId    String
+  scholar      Scholar    @relation(fields: [scholarId], references: [id])
+
+  uploadedById String
+  uploadedBy   User       @relation(fields: [uploadedById], references: [id])
+
+  volumes      BookVolume[]
+}
+
+model BookVolume {
+  id        String   @id @default(uuid())
+  title     String
+  fileUrl   String
+  fileType  String
+  order     Int      @default(1)
+  createdAt DateTime @default(now())
+
+  bookId String
+  book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  date        DateTime
+  createdAt   DateTime @default(now())
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+}
