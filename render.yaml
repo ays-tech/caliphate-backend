@@ -1,0 +1,13 @@
+services:
+  - type: web_service
+    name: caliphate-makhtaba-backend
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    # If your repository root in Render is NOT the backend folder, uncomment root and tweak
+    # root: backend
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Add other required variables in Render Dashboard (DATABASE_URL, JWT_SECRET, etc.)
