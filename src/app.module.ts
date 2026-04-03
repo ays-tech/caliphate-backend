@@ -12,18 +12,24 @@ import { EventsModule } from './events/events.module';
 @Module({
   imports: [
     // ── Rate limiting ──────────────────────────────────────────────────
-    ThrottlerModule.forRoot([
-      {
-        name:  'default',
-        ttl:   60_000,
-        limit: 60,
-      },
-      {
-        name:  'auth',
-        ttl:   60_000,
-        limit: 10,
-      },
-    ]),
+    // Disabled in development (NODE_ENV=development) to allow rapid iteration
+    // Enabled in production for protection
+    ...(process.env.NODE_ENV === 'production'
+      ? [
+          ThrottlerModule.forRoot([
+            {
+              name:  'default',
+              ttl:   60_000,
+              limit: 60,
+            },
+            {
+              name:  'auth',
+              ttl:   60_000,
+              limit: 10,
+            },
+          ]),
+        ]
+      : []),
 
     PrismaModule,
     StorageModule,
@@ -34,10 +40,15 @@ import { EventsModule } from './events/events.module';
     EventsModule,
   ],
   providers: [
-    {
-      provide:  APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
+    // Apply throttle guard only if ThrottlerModule is imported (production mode)
+    ...(process.env.NODE_ENV === 'production'
+      ? [
+          {
+            provide:  APP_GUARD,
+            useClass: ThrottlerGuard,
+          },
+        ]
+      : []),
   ],
 })
 export class AppModule {}

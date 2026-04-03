@@ -3,6 +3,7 @@ import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { join } from 'path';
 import * as express from 'express';
+import { existsSync } from 'fs';
 
 
 async function bootstrap() {
@@ -24,19 +25,47 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.setGlobalPrefix('api');
+  // ── Serve backend/media/ as static files at /media ──────────────────
+  // Try multiple paths for dev and production
+  let mediaPath: string;
   
-  // ── Serve backend/media/ as static files at /media ─────────────────
-  // e.g. http://localhost:3001/media/ibn_khaldun.webp
-  // Works identically on local and VPS — no R2 or extra config needed
-  app.use(
-    '/media',
-    express.static(join(process.cwd(), 'media'), {
-      maxAge: '7d',         // browser caches images for 7 days
-      etag: true,           // supports conditional requests
-      lastModified: true,
-    }),
-  );
+  // Try 1: From dist/ in production (dist -> ../media)
+  mediaPath = join(__dirname, '..', 'media');
+  console.log(`📁 Trying path 1: ${mediaPath}`);
+  
+  if (!existsSync(mediaPath)) {
+    // Try 2: From cwd in development (backend/media)
+    mediaPath = join(process.cwd(), 'media');
+    console.log(`📁 Trying path 2: ${mediaPath}`);
+  }
+  
+  if (!existsSync(mediaPath)) {
+    // Try 3: From cwd parent + backend (if running from project root)
+    mediaPath = join(process.cwd(), 'backend', 'media');
+    console.log(`📁 Trying path 3: ${mediaPath}`);
+  }
+
+  console.log(`📁 Final media path: ${mediaPath}`);
+  
+  if (existsSync(mediaPath)) {
+    console.log('✓ Media directory found, serving now...');
+    app.use(
+      '/media',
+      express.static(mediaPath, {
+        maxAge: '7d',
+        etag: true,
+        lastModified: true,
+      }),
+    );
+  } else {
+    console.error('❌ Media directory not found in any expected location!');
+    console.error(`   Searched paths:`);
+    console.error(`   1. ${join(__dirname, '..', 'media')}`);
+    console.error(`   2. ${join(process.cwd(), 'media')}`);
+    console.error(`   3. ${join(process.cwd(), 'backend', 'media')}`);
+  }
+
+  app.setGlobalPrefix('api');
 
 
 

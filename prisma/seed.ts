@@ -3,12 +3,11 @@ import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-// ── Base URL for media files ──────────────────────────────────────────
-// Local:      http://localhost:3001
-// VPS:        https://api.lo9in.com
-// Run seed with: API_URL=https://api.lo9in.com npx prisma db seed
-const API_URL = process.env.API_URL || 'http://localhost:3001';
-const media = (filename: string) => `${API_URL}/media/${filename}`;
+// ── Helper for media URLs ───────────────────────────────────────────
+// Store relative paths so frontend can construct full URLs
+// Local:  frontend at http://localhost:3000 → API at http://localhost:3001/api
+// Prod:   frontend at vercel.app → API at render.com
+const media = (filename: string) => `/media/${filename}`;
 
 // ── Scholars ─────────────────────────────────────────────────────────
 const SCHOLARS = [
@@ -197,8 +196,7 @@ const EVENTS = [
 
 // ── Main ──────────────────────────────────────────────────────────────
 async function main() {
-  console.log('🌱 Starting CaliphateMakhtaba seed...');
-  console.log(`🖼️  Media base URL: ${API_URL}/media\n`);
+  console.log('🌱 Starting CaliphateMakhtaba seed...\n');
 
   // ── Super Admin ───────────────────────────────────────────────────
   let superAdmin = await prisma.user.findUnique({
