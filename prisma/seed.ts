@@ -115,7 +115,7 @@ const BOOKS = [
     description:
       'A comprehensive medical encyclopedia completed around 1025, the Canon synthesised Greek, Islamic, and Indian medical knowledge into a systematic whole. Divided into five books covering general principles of medicine, simple drugs, diseases organised by organ, conditions affecting the whole body, and compound medicines. It remained the standard medical textbook in both Europe and the Islamic world until the 17th century.',
     type: BookType.PUBLISHED,
-    coverUrl: 'media/general_3',
+    coverUrl: 'media/general_3.jpg',
   },
   {
     scholarIndex: 3,
@@ -123,7 +123,7 @@ const BOOKS = [
     description:
       'A vast philosophical and scientific encyclopedia covering logic, natural sciences, mathematics, and metaphysics — Ibn Sina\'s most important philosophical work. Despite its title, it is not primarily a medical text but an attempt to heal the soul through understanding. Its sections on metaphysics and the soul were particularly influential in medieval European philosophy.',
     type: BookType.PUBLISHED,
-    coverUrl: 'media/general_1',
+    coverUrl: 'media/general_1.jpg',
   },
 
   // Imam Al-Bukhari (index 4)

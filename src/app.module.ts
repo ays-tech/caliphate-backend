@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { APP_GUARD } from '@nestjs/core';
+import { join } from 'path';
 import { PrismaModule } from './prisma/prisma.module';
 import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './auth/auth.module';
@@ -11,6 +13,12 @@ import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
+    // ── Serve static media files ──────────────────────────────────────
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'media'),
+      serveRoot: '/media',
+    }),
+
     // ── Rate limiting ──────────────────────────────────────────────────
     // Default: 60 requests per minute per IP across all routes.
     // Auth endpoints get a tighter limit — see AuthModule / controllers.
