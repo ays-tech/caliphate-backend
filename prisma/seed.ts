@@ -123,7 +123,7 @@ const BOOKS = [
     description:
       'A vast philosophical and scientific encyclopedia covering logic, natural sciences, mathematics, and metaphysics — Ibn Sina\'s most important philosophical work. Despite its title, it is not primarily a medical text but an attempt to heal the soul through understanding. Its sections on metaphysics and the soul were particularly influential in medieval European philosophy.',
     type: BookType.PUBLISHED,
-    coverUrl: media/general_1,
+    coverUrl: 'media/general_1',
   },
 
   // Imam Al-Bukhari (index 4)
