@@ -1,6 +1,9 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { join } from 'path';
+import * as express from 'express';
+
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -22,6 +25,20 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix('api');
+  
+  // ── Serve backend/media/ as static files at /media ─────────────────
+  // e.g. http://localhost:3001/media/ibn_khaldun.webp
+  // Works identically on local and VPS — no R2 or extra config needed
+  app.use(
+    '/media',
+    express.static(join(process.cwd(), 'media'), {
+      maxAge: '7d',         // browser caches images for 7 days
+      etag: true,           // supports conditional requests
+      lastModified: true,
+    }),
+  );
+
+
 
   // ── Global validation pipe ──────────────────────────────────────────
   app.useGlobalPipes(
