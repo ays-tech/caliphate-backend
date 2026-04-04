@@ -51,7 +51,12 @@ async function bootstrap() {
     console.log('✓ Media directory found, serving now...');
     app.use(
       '/media',
-      express.static(mediaPath, {
+      (req: any, res: any, next: any) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        next();
+      },
+      express.static(join(process.cwd(), 'media'), {
         maxAge: '7d',
         etag: true,
         lastModified: true,
