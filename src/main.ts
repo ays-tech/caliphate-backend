@@ -7,23 +7,15 @@ import * as express from 'express';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // CORS — restricted to your frontend for API routes
-  app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    credentials: true,
-  });
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-  app.setGlobalPrefix('api');
-
-  // ── Media files — open CORS so any browser/device can load images ──
+  // ── Media middleware FIRST — before global CORS ────────────────────
+  // Open wildcard CORS only for /media/ image files
   app.use('/media', (req: any, res: any, next: any) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.removeHeader('Access-Control-Allow-Credentials');
     res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-    if (req.method === 'OPTIONS') {
-      return res.status(204).end();
-    }
+    if (req.method === 'OPTIONS') return res.status(204).end();
     next();
   });
 
@@ -35,6 +27,20 @@ async function bootstrap() {
       lastModified: true,
     }),
   );
+
+  // ── API CORS — restricted to your frontend only ────────────────────
+  app.enableCors({
+    origin: [
+      frontendUrl,
+      'http://localhost:3000',
+      'http://localhost:3001',
+    ],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  });
+
+  app.setGlobalPrefix('api');
 
   // ── Global validation pipe ─────────────────────────────────────────
   app.useGlobalPipes(
@@ -55,7 +61,8 @@ async function bootstrap() {
   const port = process.env.PORT || 3001;
   await app.listen(port);
   console.log(`🚀 Backend running on http://localhost:${port}`);
-  console.log(`🖼️  Media files served at http://localhost:${port}/media`);
+  console.log(`🌐 CORS allowed for: ${frontendUrl}`);
+  console.log(`🖼️  Media served at: http://localhost:${port}/media`);
   console.log('📚 CaliphateMakhtaba API ready');
 }
 bootstrap();
