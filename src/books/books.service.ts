@@ -6,13 +6,15 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { PushService } from '../push/push.service';
 import { IMAGE_TYPES } from '../common/config/upload.config';
 
 @Injectable()
 export class BooksService {
   constructor(
-    private prisma: PrismaService,
+    private prisma:  PrismaService,
     private storage: StorageService,
+    private push:    PushService,
   ) {}
 
   // ── Create ──────────────────────────────────────────────────────────
@@ -61,7 +63,6 @@ export class BooksService {
       },
     });
 
-    // Auto-create Volume 1 if a file was provided
     if (bookFile) {
       const fileUrl  = await this.storage.uploadFile(bookFile, 'volumes');
       const fileType = this.detectFileType(bookFile.mimetype);
@@ -184,11 +185,11 @@ export class BooksService {
     const skip  = (page - 1) * limit;
 
     const where: any = { status: query.status || 'APPROVED' };
-    if (query.search)    where.title    = { contains: query.search, mode: 'insensitive' };
+    if (query.search)    where.title     = { contains: query.search, mode: 'insensitive' };
     if (query.scholarId) where.scholarId = query.scholarId;
-    if (query.type)      where.type     = query.type;
-    if (query.language)  where.language = query.language;
-    if (query.format)    where.format   = query.format;
+    if (query.type)      where.type      = query.type;
+    if (query.language)  where.language  = query.language;
+    if (query.format)    where.format    = query.format;
 
     const [books, total] = await Promise.all([
       this.prisma.book.findMany({
@@ -277,13 +278,29 @@ export class BooksService {
     return book;
   }
 
+  // ── Approve — fires push notification ───────────────────────────────
   async approve(id: string) {
-    const book = await this.prisma.book.findUnique({ where: { id } });
-    if (!book) throw new NotFoundException('Book not found');
-    return this.prisma.book.update({
-      where: { id }, data: { status: 'APPROVED' },
+    const book = await this.prisma.book.findUnique({
+      where:   { id },
       include: { scholar: true },
     });
+    if (!book) throw new NotFoundException('Book not found');
+
+    const approved = await this.prisma.book.update({
+      where: { id },
+      data:  { status: 'APPROVED' },
+      include: { scholar: true },
+    });
+
+    // Notify all subscribers (non-blocking)
+    this.push.sendToAll({
+      title: '📚 New Book — CaliphateMakhtaba',
+      body:  `${book.title} by ${book.scholar?.name || 'Unknown Scholar'}`,
+      url:   `/books/${book.id}`,
+      tag:   `book-${book.id}`,
+    }).catch(() => {});
+
+    return approved;
   }
 
   async reject(id: string) {

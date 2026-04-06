@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { ScholarsModule } from './scholars/scholars.module';
 import { BooksModule } from './books/books.module';
 import { EventsModule } from './events/events.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { EventsModule } from './events/events.module';
     ScholarsModule,
     BooksModule,
     EventsModule,
+    PushModule
   ],
   providers: [
     // Apply throttle guard only if ThrottlerModule is imported (production mode)
