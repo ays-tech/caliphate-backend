@@ -1,5 +1,5 @@
 import { UnsupportedMediaTypeException } from '@nestjs/common';
-import { memoryStorage } from 'multer';
+import * as multer from 'multer';
 
 const MB = 1024 * 1024;
 
@@ -68,7 +68,7 @@ const bookFileFilter = (_req: any, file: Express.Multer.File, cb: any) => {
  * We only limit by fileSize.
  */
 export const imageUploadOptions = {
-  storage:    memoryStorage(),
+  storage:    multer.memoryStorage(),
   limits:     { fileSize: 5 * MB },
   fileFilter: imageFilter,
 };
@@ -78,7 +78,7 @@ export const imageUploadOptions = {
  * Max 500 MB to accommodate large video lectures.
  */
 export const bookFileUploadOptions = {
-  storage:    memoryStorage(),
+  storage:    multer.memoryStorage(),
   limits:     { fileSize: 500 * MB },
   fileFilter: bookFileFilter,
 };
@@ -90,7 +90,7 @@ export const bookFileUploadOptions = {
  * Per-field type validation is enforced in the service layer.
  */
 export const createBookMultipartOptions = {
-  storage:    memoryStorage(),
+  storage:    multer.memoryStorage(),
   limits:     { fileSize: 500 * MB },
   fileFilter: (_req: any, file: Express.Multer.File, cb: any) => {
     const allowed = [...IMAGE_TYPES, ...BOOK_FILE_TYPES];
