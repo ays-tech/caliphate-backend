@@ -1,5 +1,6 @@
 import { UnsupportedMediaTypeException } from '@nestjs/common';
-import * as multer from 'multer';
+import multer = require('multer');
+
 
 const MB = 1024 * 1024;
 
@@ -105,3 +106,5 @@ export const createBookMultipartOptions = {
     cb(null, true);
   },
 };
+
+
