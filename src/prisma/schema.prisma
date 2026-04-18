@@ -9,11 +9,19 @@ datasource db {
 
 enum Role {
   USER
+  AUTHOR
   ADMIN
   SUPER_ADMIN
 }
 
+enum AuthorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum BookStatus {
+  DRAFT
   PENDING
   APPROVED
   REJECTED
@@ -47,8 +55,27 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  books  Book[]
-  events Event[]
+  books         Book[]
+  events        Event[]
+  authorProfile AuthorProfile?
+}
+
+model AuthorProfile {
+  id         String       @id @default(uuid())
+  penName    String
+  bio        String?
+  avatarUrl  String?
+  status     AuthorStatus @default(PENDING)
+  reviewNote String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  books Book[]
+
+  @@index([status])
 }
 
 model Scholar {
@@ -63,25 +90,33 @@ model Scholar {
 }
 
 model Book {
-  id           String       @id @default(uuid())
-  title        String
-  description  String?
-  coverUrl     String?
-  type         BookType     @default(UNPUBLISHED)
-  status       BookStatus   @default(PENDING)
-  language     BookLanguage @default(ARABIC)
-  format       BookFormat   @default(BOOK)
-  readCount    Int          @default(0)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id          String       @id @default(uuid())
+  title       String
+  description String?
+  coverUrl    String?
+  type        BookType     @default(UNPUBLISHED)
+  status      BookStatus   @default(DRAFT)
+  language    BookLanguage @default(ARABIC)
+  format      BookFormat   @default(BOOK)
+  readCount   Int          @default(0)
+  reviewNote  String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
-  scholarId    String
-  scholar      Scholar      @relation(fields: [scholarId], references: [id])
+  scholarId String
+  scholar   Scholar @relation(fields: [scholarId], references: [id])
 
   uploadedById String
-  uploadedBy   User         @relation(fields: [uploadedById], references: [id])
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
 
-  volumes      BookVolume[]
+  authorProfileId String?
+  authorProfile   AuthorProfile? @relation(fields: [authorProfileId], references: [id])
+
+  volumes BookVolume[]
+
+  @@index([status])
+  @@index([scholarId])
+  @@index([authorProfileId])
 }
 
 model BookVolume {
@@ -104,7 +139,7 @@ model Event {
   createdAt   DateTime @default(now())
 
   createdById String
-  createdBy   User    @relation(fields: [createdById], references: [id])
+  createdBy   User   @relation(fields: [createdById], references: [id])
 }
 
 model PushSubscription {

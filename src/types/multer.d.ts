@@ -1,9 +1,10 @@
+import 'multer';
 import 'express';
 
 declare global {
   namespace Express {
-    interface Multer {
-      File {
+    namespace Multer {
+      interface File {
         fieldname: string;
         originalname: string;
         encoding: string;
