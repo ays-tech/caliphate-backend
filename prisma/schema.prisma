@@ -5,12 +5,45 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-enum Role { USER SCHOLAR ADMIN SUPER_ADMIN }
-enum ScholarClaimStatus { PENDING APPROVED REJECTED }
-enum BookStatus { DRAFT PENDING APPROVED REJECTED }
-enum BookType { PUBLISHED UNPUBLISHED }
-enum BookLanguage { ENGLISH ARABIC HAUSA FULFULDE }
-enum BookFormat { BOOK AUDIO VIDEO }
+
+
+enum Role {
+  USER
+  SCHOLAR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum ScholarClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BookStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BookType {
+  PUBLISHED
+  UNPUBLISHED
+}
+
+enum BookLanguage {
+  ENGLISH
+  ARABIC
+  HAUSA
+  FULFULDE
+}
+
+enum BookFormat {
+  BOOK
+  AUDIO
+  VIDEO
+}
 model User {
   id        String   @id @default(uuid())
   name      String
