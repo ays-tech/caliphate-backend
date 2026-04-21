@@ -9,7 +9,6 @@ import { ScholarsModule } from './scholars/scholars.module';
 import { BooksModule } from './books/books.module';
 import { EventsModule } from './events/events.module';
 import { PushModule } from './push/push.module';
-import { AuthorModule } from './author/author.module';
 
 @Module({
   imports: [
@@ -25,7 +24,6 @@ import { AuthorModule } from './author/author.module';
     BooksModule,
     EventsModule,
     PushModule,
-    AuthorModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -1,50 +1,16 @@
 generator client {
   provider = "prisma-client-js"
 }
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
-enum Role {
-  USER
-  AUTHOR
-  ADMIN
-  SUPER_ADMIN
-}
-
-enum AuthorStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum BookStatus {
-  DRAFT
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum BookType {
-  PUBLISHED
-  UNPUBLISHED
-}
-
-enum BookLanguage {
-  ENGLISH
-  ARABIC
-  HAUSA
-  FULFULDE
-}
-
-enum BookFormat {
-  BOOK
-  AUDIO
-  VIDEO
-}
-
+enum Role { USER SCHOLAR ADMIN SUPER_ADMIN }
+enum ScholarClaimStatus { PENDING APPROVED REJECTED }
+enum BookStatus { DRAFT PENDING APPROVED REJECTED }
+enum BookType { PUBLISHED UNPUBLISHED }
+enum BookLanguage { ENGLISH ARABIC HAUSA FULFULDE }
+enum BookFormat { BOOK AUDIO VIDEO }
 model User {
   id        String   @id @default(uuid())
   name      String
@@ -54,30 +20,10 @@ model User {
   approved  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   books         Book[]
   events        Event[]
-  authorProfile AuthorProfile?
+  scholarProfile Scholar?
 }
-
-model AuthorProfile {
-  id         String       @id @default(uuid())
-  penName    String
-  bio        String?
-  avatarUrl  String?
-  status     AuthorStatus @default(PENDING)
-  reviewNote String?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  books Book[]
-
-  @@index([status])
-}
-
 model Scholar {
   id         String   @id @default(uuid())
   name       String
@@ -85,10 +31,13 @@ model Scholar {
   pictureUrl String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
+  userId      String?             @unique
+  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  claimStatus ScholarClaimStatus?
+  reviewNote  String?
   books Book[]
+  @@index([claimStatus])
 }
-
 model Book {
   id          String       @id @default(uuid())
   title       String
@@ -102,23 +51,15 @@ model Book {
   reviewNote  String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
-
-  scholarId String
-  scholar   Scholar @relation(fields: [scholarId], references: [id])
-
+  scholarId    String
+  scholar      Scholar @relation(fields: [scholarId], references: [id])
   uploadedById String
-  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
-
-  authorProfileId String?
-  authorProfile   AuthorProfile? @relation(fields: [authorProfileId], references: [id])
-
+  uploadedBy   User    @relation(fields: [uploadedById], references: [id])
   volumes BookVolume[]
-
   @@index([status])
   @@index([scholarId])
-  @@index([authorProfileId])
+  @@index([uploadedById])
 }
-
 model BookVolume {
   id        String   @id @default(uuid())
   title     String
@@ -126,22 +67,18 @@ model BookVolume {
   fileType  String
   order     Int      @default(1)
   createdAt DateTime @default(now())
-
   bookId String
   book   Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
 }
-
 model Event {
   id          String   @id @default(uuid())
   title       String
   description String?
   date        DateTime
   createdAt   DateTime @default(now())
-
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 }
-
 model PushSubscription {
   id        String   @id @default(uuid())
   endpoint  String   @unique

@@ -14,52 +14,56 @@ export class BooksService {
     private push:    PushService,
   ) {}
 
-  // ── Create (DRAFT by default) ────────────────────────────────────────
-  // Admins: status = PENDING (goes straight to moderation queue)
-  // Authors: status = DRAFT (must call /submit when ready)
+  private isAdmin(role: string) {
+    return role === 'ADMIN' || role === 'SUPER_ADMIN';
+  }
+
+  // ── Create ────────────────────────────────────────────────────────────
+  // Admins → PENDING  (straight to moderation)
+  // Scholars → DRAFT  (must submit when ready)
   async create(
-    data: {
-      title: string; description?: string; scholarId: string;
-      type?: string; language?: string; format?: string; volumeTitle?: string;
-    },
+    data: { title: string; description?: string; scholarId: string; type?: string; language?: string; format?: string; volumeTitle?: string },
     uploadedById: string,
     userRole: string,
     coverFile?: Express.Multer.File,
     bookFile?:  Express.Multer.File,
-    authorProfileId?: string,
   ) {
-    if (!data.title?.trim())  throw new BadRequestException('Book title is required');
-    if (!data.scholarId)      throw new BadRequestException('Scholar is required');
+    if (!data.title?.trim()) throw new BadRequestException('Book title is required');
+    if (!data.scholarId)     throw new BadRequestException('Scholar is required');
+
+    // Scholars can only upload to their own scholar profile
+    if (userRole === 'SCHOLAR') {
+      const scholar = await this.prisma.scholar.findUnique({ where: { id: data.scholarId } });
+      if (!scholar || scholar.userId !== uploadedById) {
+        throw new ForbiddenException('You can only upload books to your own scholar profile');
+      }
+    }
 
     if (coverFile && !IMAGE_TYPES.includes(coverFile.mimetype)) {
-      throw new BadRequestException('Cover must be a JPEG, PNG, or WEBP image');
+      throw new BadRequestException('Cover must be JPEG, PNG, or WEBP');
     }
 
     let coverUrl: string | undefined;
     if (coverFile) coverUrl = await this.storage.uploadFile(coverFile, 'covers');
 
-    // Admins skip the draft step — go straight to PENDING for moderation
-    const isAdmin  = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
-    const initStatus = isAdmin ? 'PENDING' : 'DRAFT';
+    const status = this.isAdmin(userRole) ? 'PENDING' : 'DRAFT';
 
     const book = await this.prisma.book.create({
       data: {
-        title:          data.title.trim(),
-        description:    data.description?.trim() || null,
-        scholarId:      data.scholarId,
+        title:       data.title.trim(),
+        description: data.description?.trim() || null,
+        scholarId:   data.scholarId,
         uploadedById,
-        authorProfileId: authorProfileId || null,
         coverUrl,
         type:     (data.type     as any) || 'UNPUBLISHED',
         language: (data.language as any) || 'ARABIC',
         format:   (data.format   as any) || 'BOOK',
-        status:   initStatus as any,
+        status:   status as any,
       },
       include: {
-        scholar:       true,
-        uploadedBy:    { select: { id: true, name: true } },
-        authorProfile: { select: { id: true, penName: true } },
-        _count:        { select: { volumes: true } },
+        scholar:    true,
+        uploadedBy: { select: { id: true, name: true } },
+        _count:     { select: { volumes: true } },
       },
     });
 
@@ -78,27 +82,21 @@ export class BooksService {
     return book;
   }
 
-  // ── Submit (DRAFT → PENDING) — author workflow ───────────────────────
+  // ── Submit (DRAFT → PENDING) ──────────────────────────────────────────
   async submit(id: string, userId: string, userRole: string) {
     const book = await this.prisma.book.findUnique({ where: { id } });
     if (!book) throw new NotFoundException('Book not found');
 
-    // Only owner or admin can submit
-    if (userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN' && book.uploadedById !== userId) {
+    if (!this.isAdmin(userRole) && book.uploadedById !== userId) {
       throw new ForbiddenException('You can only submit your own books');
     }
-
     if (book.status !== 'DRAFT') {
-      throw new BadRequestException(
-        `Book is already ${book.status.toLowerCase()}. Only DRAFT books can be submitted.`,
-      );
+      throw new BadRequestException(`Book is ${book.status.toLowerCase()} — only DRAFT books can be submitted`);
     }
-
-    // Verify author has an approved profile
-    if (userRole === 'AUTHOR') {
-      const profile = await this.prisma.authorProfile.findUnique({ where: { userId } });
-      if (!profile || profile.status !== 'APPROVED') {
-        throw new ForbiddenException('Your author profile must be approved before you can submit books');
+    if (userRole === 'SCHOLAR') {
+      const scholar = await this.prisma.scholar.findUnique({ where: { userId } });
+      if (!scholar || scholar.claimStatus !== 'APPROVED') {
+        throw new ForbiddenException('Your scholar profile must be approved before submitting books');
       }
     }
 
@@ -112,7 +110,7 @@ export class BooksService {
   // ── Update ────────────────────────────────────────────────────────────
   async update(
     id: string,
-    data: { title?: string; description?: string; scholarId?: string; type?: string; language?: string; format?: string; },
+    data: { title?: string; description?: string; scholarId?: string; type?: string; language?: string; format?: string },
     userId: string,
     userRole: string,
     coverFile?: Express.Multer.File,
@@ -120,17 +118,15 @@ export class BooksService {
     const book = await this.prisma.book.findUnique({ where: { id } });
     if (!book) throw new NotFoundException('Book not found');
 
-    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN' && book.uploadedById !== userId) {
+    if (!this.isAdmin(userRole) && book.uploadedById !== userId) {
       throw new ForbiddenException('You can only edit your own books');
     }
-
-    // Authors can only edit DRAFT books
-    if (userRole === 'AUTHOR' && book.status !== 'DRAFT') {
-      throw new ForbiddenException('You can only edit books that are still in DRAFT status');
+    if (userRole === 'SCHOLAR' && book.status !== 'DRAFT') {
+      throw new ForbiddenException('You can only edit books in DRAFT status');
     }
 
     if (coverFile && !IMAGE_TYPES.includes(coverFile.mimetype)) {
-      throw new BadRequestException('Cover must be a JPEG, PNG, or WEBP image');
+      throw new BadRequestException('Cover must be JPEG, PNG, or WEBP');
     }
 
     let coverUrl = book.coverUrl;
@@ -138,8 +134,6 @@ export class BooksService {
       coverUrl = await this.storage.uploadFile(coverFile, 'covers');
       if (book.coverUrl) this.storage.deleteFile(book.coverUrl).catch(() => {});
     }
-
-    const isAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
 
     return this.prisma.book.update({
       where: { id },
@@ -151,8 +145,7 @@ export class BooksService {
         ...(data.language                  && { language:    data.language as any }),
         ...(data.format                    && { format:      data.format as any }),
         coverUrl,
-        // Admin edits reset to PENDING; author edits keep DRAFT
-        status: isAdmin ? 'PENDING' as any : book.status,
+        status: this.isAdmin(userRole) ? ('PENDING' as any) : book.status,
       },
       include: {
         scholar:    true,
@@ -166,8 +159,7 @@ export class BooksService {
   async addVolume(bookId: string, volumeData: { title: string; order?: number }, file: Express.Multer.File, userId: string, userRole: string) {
     const book = await this.prisma.book.findUnique({ where: { id: bookId } });
     if (!book) throw new NotFoundException('Book not found');
-
-    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN' && book.uploadedById !== userId) {
+    if (!this.isAdmin(userRole) && book.uploadedById !== userId) {
       throw new ForbiddenException('You can only add volumes to your own books');
     }
     if (!volumeData.title?.trim()) throw new BadRequestException('Volume title is required');
@@ -189,11 +181,10 @@ export class BooksService {
   }
 
   // ── Public list ───────────────────────────────────────────────────────
-  async findAll(query: { search?: string; scholarId?: string; status?: string; type?: string; language?: string; format?: string; page?: number; limit?: number; }) {
+  async findAll(query: { search?: string; scholarId?: string; status?: string; type?: string; language?: string; format?: string; page?: number; limit?: number }) {
     const page  = Math.max(1, query.page  || 1);
     const limit = Math.min(50, query.limit || 12);
     const skip  = (page - 1) * limit;
-
     const where: any = { status: query.status || 'APPROVED' };
     if (query.search)    where.title     = { contains: query.search, mode: 'insensitive' };
     if (query.scholarId) where.scholarId = query.scholarId;
@@ -205,25 +196,22 @@ export class BooksService {
       this.prisma.book.findMany({
         where, skip, take: limit,
         include: {
-          scholar:       { select: { id: true, name: true, pictureUrl: true } },
-          uploadedBy:    { select: { id: true, name: true } },
-          authorProfile: { select: { id: true, penName: true } },
-          _count:        { select: { volumes: true } },
+          scholar:    { select: { id: true, name: true, pictureUrl: true } },
+          uploadedBy: { select: { id: true, name: true } },
+          _count:     { select: { volumes: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.book.count({ where }),
     ]);
-
     return { data: books, total, page, totalPages: Math.ceil(total / limit) };
   }
 
-  // ── Admin list (all statuses) ─────────────────────────────────────────
-  async findAllAdmin(query: { search?: string; status?: string; page?: number; limit?: number; }) {
+  // ── Admin list ────────────────────────────────────────────────────────
+  async findAllAdmin(query: { search?: string; status?: string; page?: number; limit?: number }) {
     const page  = Math.max(1, query.page  || 1);
     const limit = Math.min(50, query.limit || 12);
     const skip  = (page - 1) * limit;
-
     const where: any = {};
     if (query.search) where.title  = { contains: query.search, mode: 'insensitive' };
     if (query.status) where.status = query.status;
@@ -232,10 +220,9 @@ export class BooksService {
       this.prisma.book.findMany({
         where, skip, take: limit,
         include: {
-          scholar:       { select: { id: true, name: true } },
-          uploadedBy:    { select: { id: true, name: true } },
-          authorProfile: { select: { id: true, penName: true } },
-          _count:        { select: { volumes: true } },
+          scholar:    { select: { id: true, name: true } },
+          uploadedBy: { select: { id: true, name: true } },
+          _count:     { select: { volumes: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -244,14 +231,10 @@ export class BooksService {
     return { data: books, total, page, totalPages: Math.ceil(total / limit) };
   }
 
-  // ── Author's own books ────────────────────────────────────────────────
   async findMyBooks(userId: string) {
     return this.prisma.book.findMany({
       where:   { uploadedById: userId },
-      include: {
-        scholar:    { select: { id: true, name: true } },
-        _count:     { select: { volumes: true } },
-      },
+      include: { scholar: { select: { id: true, name: true } }, _count: { select: { volumes: true } } },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -273,61 +256,44 @@ export class BooksService {
   async findOne(id: string) {
     const book = await this.prisma.book.findUnique({
       where: { id },
-      include: {
-        scholar:       true,
-        uploadedBy:    { select: { id: true, name: true } },
-        authorProfile: { select: { id: true, penName: true, avatarUrl: true } },
-        volumes:       { orderBy: { order: 'asc' } },
-      },
+      include: { scholar: true, uploadedBy: { select: { id: true, name: true } }, volumes: { orderBy: { order: 'asc' } } },
     });
     if (!book) throw new NotFoundException('Book not found');
     this.prisma.book.update({ where: { id }, data: { readCount: { increment: 1 } } }).catch(() => {});
     return book;
   }
 
-  // ── Approve ───────────────────────────────────────────────────────────
   async approve(id: string) {
     const book = await this.prisma.book.findUnique({ where: { id }, include: { scholar: true } });
     if (!book) throw new NotFoundException('Book not found');
-
     const approved = await this.prisma.book.update({
-      where: { id },
-      data:  { status: 'APPROVED', reviewNote: null },
-      include: { scholar: true },
+      where: { id }, data: { status: 'APPROVED', reviewNote: null }, include: { scholar: true },
     });
-
     this.push.sendToAll({
       title: '📚 New Book — CaliphateMakhtaba',
       body:  `${book.title} by ${book.scholar?.name || 'Unknown Scholar'}`,
       url:   `/books/${book.id}`,
       tag:   `book-${book.id}`,
     }).catch(() => {});
-
     return approved;
   }
 
-  // ── Reject (with optional review note) ───────────────────────────────
   async reject(id: string, reviewNote?: string) {
     const book = await this.prisma.book.findUnique({ where: { id } });
     if (!book) throw new NotFoundException('Book not found');
     return this.prisma.book.update({
-      where: { id },
-      data:  { status: 'REJECTED', reviewNote: reviewNote || null },
-      include: { scholar: true },
+      where: { id }, data: { status: 'REJECTED', reviewNote: reviewNote || null }, include: { scholar: true },
     });
   }
 
   async delete(id: string, userId: string, userRole: string) {
     const book = await this.prisma.book.findUnique({ where: { id }, include: { volumes: true } });
     if (!book) throw new NotFoundException('Book not found');
-
-    if (userRole !== 'SUPER_ADMIN' && userRole !== 'ADMIN' && book.uploadedById !== userId) {
+    if (!this.isAdmin(userRole) && book.uploadedById !== userId) {
       throw new ForbiddenException('You can only delete your own books');
     }
-
     if (book.coverUrl) this.storage.deleteFile(book.coverUrl).catch(() => {});
     for (const vol of book.volumes) this.storage.deleteFile(vol.fileUrl).catch(() => {});
-
     await this.prisma.book.delete({ where: { id } });
     return { message: 'Book deleted successfully' };
   }

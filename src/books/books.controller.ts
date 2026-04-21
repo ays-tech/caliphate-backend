@@ -9,7 +9,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { BooksService } from './books.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { ApprovedAuthorGuard } from '../common/guards/approved-author.guard';
+import { ApprovedScholarGuard } from '../common/guards/approved-scholar.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -22,8 +22,7 @@ import {
 export class BooksController {
   constructor(private booksService: BooksService) {}
 
-  // ── Public ─────────────────────────────────────────────────────────
-
+  // ── Public ────────────────────────────────────────────────────────────
   @Get()
   @SkipThrottle()
   findAll(
@@ -54,14 +53,7 @@ export class BooksController {
     return this.booksService.findRecent(limit ? parseInt(limit) : 6);
   }
 
-  @Get('volumes/:volumeId/download')
-  @UseGuards(JwtAuthGuard)
-  getSignedUrl(@Param('volumeId', ParseUUIDPipe) volumeId: string) {
-    return this.booksService.getSignedVolumeUrl(volumeId);
-  }
-
-  // ── Author: my books ───────────────────────────────────────────────
-
+  // ── Scholar: my books ─────────────────────────────────────────────────
   @Get('my-books')
   @UseGuards(JwtAuthGuard)
   @SkipThrottle()
@@ -69,8 +61,7 @@ export class BooksController {
     return this.booksService.findMyBooks(user.id);
   }
 
-  // ── Admin list ─────────────────────────────────────────────────────
-
+  // ── Admin list ────────────────────────────────────────────────────────
   @Get('admin/all')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPER_ADMIN)
@@ -88,43 +79,43 @@ export class BooksController {
     });
   }
 
+  @Get('volumes/:volumeId/download')
+  @UseGuards(JwtAuthGuard)
+  getSignedUrl(@Param('volumeId', ParseUUIDPipe) volumeId: string) {
+    return this.booksService.getSignedVolumeUrl(volumeId);
+  }
+
   @Get(':id')
   @SkipThrottle()
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.booksService.findOne(id);
   }
 
-  // ── Create ─────────────────────────────────────────────────────────
-  // Admins: PENDING status. Approved authors: DRAFT status.
+  // ── Create ────────────────────────────────────────────────────────────
+  // Admins: PENDING. Approved scholars: DRAFT.
   @Post()
-  @UseGuards(JwtAuthGuard, ApprovedAuthorGuard)
+  @UseGuards(JwtAuthGuard, ApprovedScholarGuard)
   @UseInterceptors(
     FileFieldsInterceptor(
       [{ name: 'cover', maxCount: 1 }, { name: 'bookFile', maxCount: 1 }],
       createBookMultipartOptions,
     ),
   )
-  async create(
+  create(
     @Body() body: CreateBookDto,
     @CurrentUser() user: any,
     @UploadedFiles() files?: { cover?: Express.Multer.File[]; bookFile?: Express.Multer.File[] },
   ) {
-    const cover    = files?.cover?.[0];
-    const bookFile = files?.bookFile?.[0];
-
-    // Get author profile id if user is AUTHOR
-    let authorProfileId: string | undefined;
-    if (user.role === 'AUTHOR') {
-      const profile = await (this as any).booksService['prisma'].authorProfile.findUnique({
-        where: { userId: user.id },
-      });
-      authorProfileId = profile?.id;
-    }
-
-    return this.booksService.create(body, user.id, user.role, cover, bookFile, authorProfileId);
+    return this.booksService.create(
+      body,
+      user.id,
+      user.role,
+      files?.cover?.[0],
+      files?.bookFile?.[0],
+    );
   }
 
-  // ── Submit for review (DRAFT → PENDING) ───────────────────────────
+  // ── Submit for review (DRAFT → PENDING) ──────────────────────────────
   @Patch(':id/submit')
   @UseGuards(JwtAuthGuard)
   submit(
@@ -134,7 +125,7 @@ export class BooksController {
     return this.booksService.submit(id, user.id, user.role);
   }
 
-  // ── Update ─────────────────────────────────────────────────────────
+  // ── Update ────────────────────────────────────────────────────────────
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('cover', imageUploadOptions))
@@ -147,7 +138,7 @@ export class BooksController {
     return this.booksService.update(id, body, user.id, user.role, cover);
   }
 
-  // ── Add volume ─────────────────────────────────────────────────────
+  // ── Add volume ────────────────────────────────────────────────────────
   @Post(':id/volumes')
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file', bookFileUploadOptions))
@@ -160,8 +151,7 @@ export class BooksController {
     return this.booksService.addVolume(bookId, body, file, user.id, user.role);
   }
 
-  // ── Admin approve/reject ───────────────────────────────────────────
-
+  // ── Admin approve / reject ────────────────────────────────────────────
   @Patch(':id/approve')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.SUPER_ADMIN)
