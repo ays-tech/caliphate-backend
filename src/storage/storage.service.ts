@@ -1,20 +1,27 @@
 import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-  OnModuleInit,
+  Injectable, InternalServerErrorException, Logger, OnModuleInit,
 } from '@nestjs/common';
 import * as fs   from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-/**
- * Local disk storage — files saved to <cwd>/uploads/<folder>/
- * Served at https://api.lo9in.com/uploads/<folder>/<file>
- *
- * Set in .env:
- *   API_URL=https://api.lo9in.com
- */
+// sharp loaded at runtime so missing package gives a clear warning
+// instead of crashing the build
+let sharp: any = null;
+try { sharp = require('sharp'); } catch { /* not installed */ }
+
+const IMAGE_MIMETYPES = new Set([
+  'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/avif',
+]);
+
+// Max dimensions per folder type
+const IMAGE_CONFIG: Record<string, { width: number; height: number; quality: number }> = {
+  scholars: { width: 400,  height: 400,  quality: 82 }, // profile photos — square crop
+  covers:   { width: 600,  height: 900,  quality: 82 }, // book covers — portrait
+  avatars:  { width: 400,  height: 400,  quality: 82 }, // same as scholars
+  default:  { width: 1200, height: 1200, quality: 80 }, // anything else
+};
+
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly logger    = new Logger(StorageService.name);
@@ -22,29 +29,40 @@ export class StorageService implements OnModuleInit {
   private readonly baseUrl   = (process.env.API_URL || 'http://localhost:3001').replace(/\/$/, '');
 
   onModuleInit() {
-    for (const folder of ['covers', 'scholars', 'volumes']) {
+    for (const folder of ['covers', 'scholars', 'volumes', 'avatars']) {
       const dir = path.join(this.uploadDir, folder);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
-        this.logger.log(`Created upload dir: ${dir}`);
+        this.logger.log(`Created: ${dir}`);
       }
     }
-    this.logger.log(`Local storage ready → ${this.uploadDir}`);
-    this.logger.log(`Public base URL    → ${this.baseUrl}/uploads/`);
+
+    if (!sharp) {
+      this.logger.warn(
+        'sharp not installed — images will be saved uncompressed.\n' +
+        'Run: npm install sharp   to enable automatic compression.',
+      );
+    } else {
+      this.logger.log('Image compression ready (sharp ✓)');
+    }
+
+    this.logger.log(`Storage → ${this.uploadDir}`);
+    this.logger.log(`Base URL → ${this.baseUrl}/uploads/`);
   }
 
+  // ── Sanitise filename ─────────────────────────────────────────────────
   private sanitise(original: string): string {
     const parts = original.split('.');
     const ext   = (parts.length > 1 ? parts.pop()! : 'bin').toLowerCase().slice(0, 10);
-    const base  = parts
-      .join('-')
+    const base  = parts.join('-')
       .replace(/[^a-zA-Z0-9-_]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '')
-      .slice(0, 80) || 'file';
+      .slice(0, 60) || 'file';
     return `${base}.${ext}`;
   }
 
+  // ── Upload ────────────────────────────────────────────────────────────
   async uploadFile(file: Express.Multer.File, folder: string): Promise<string> {
     if (!file?.buffer?.length) {
       throw new InternalServerErrorException('File buffer is empty');
@@ -55,6 +73,35 @@ export class StorageService implements OnModuleInit {
       fs.mkdirSync(folderPath, { recursive: true });
     }
 
+    const isImage = IMAGE_MIMETYPES.has(file.mimetype);
+
+    // ── Compress images with sharp ───────────────────────────────────
+    if (isImage && sharp) {
+      const cfg      = IMAGE_CONFIG[folder] || IMAGE_CONFIG.default;
+      const filename = `${uuidv4()}.webp`;
+      const filePath = path.join(folderPath, filename);
+      const before   = file.size;
+
+      await sharp(file.buffer)
+        .rotate()                        // auto-rotate from EXIF
+        .resize(cfg.width, cfg.height, {
+          fit:         'inside',         // never upscale, keep aspect ratio
+          withoutEnlargement: true,
+        })
+        .webp({ quality: cfg.quality })  // convert everything to WebP
+        .toFile(filePath);
+
+      const after = fs.statSync(filePath).size;
+      this.logger.log(
+        `Compressed ${folder}/${filename}: ` +
+        `${(before / 1024).toFixed(0)} KB → ${(after / 1024).toFixed(0)} KB ` +
+        `(${Math.round((1 - after / before) * 100)}% smaller)`,
+      );
+
+      return `${this.baseUrl}/uploads/${folder}/${filename}`;
+    }
+
+    // ── Non-image files (PDFs, audio, video) — save as-is ────────────
     const filename = `${uuidv4()}-${this.sanitise(file.originalname)}`;
     const filePath = path.join(folderPath, filename);
     const sizeMB   = (file.size / 1_048_576).toFixed(2);
@@ -66,11 +113,12 @@ export class StorageService implements OnModuleInit {
     return `${this.baseUrl}/uploads/${folder}/${filename}`;
   }
 
-  // No signing needed for local disk — URL is already public
+  // ── Signed URL (local disk = public URL, no signing needed) ──────────
   async getSignedUrl(fileUrl: string, _expiresIn = 3_600): Promise<string> {
     return fileUrl;
   }
 
+  // ── Delete ────────────────────────────────────────────────────────────
   async deleteFile(fileUrl: string): Promise<void> {
     if (!fileUrl) return;
 
@@ -93,5 +141,61 @@ export class StorageService implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`Delete failed ${filePath}: ${e.message}`);
     }
+  }
+
+  // ── Bulk recompress existing images (run once via admin endpoint) ─────
+  async recompressExisting(): Promise<{ processed: number; saved: number; errors: string[] }> {
+    if (!sharp) throw new InternalServerErrorException('sharp not installed');
+
+    const imageFolders = ['scholars', 'covers', 'avatars'];
+    let processed = 0;
+    let savedBytes = 0;
+    const errors: string[] = [];
+
+    for (const folder of imageFolders) {
+      const folderPath = path.join(this.uploadDir, folder);
+      if (!fs.existsSync(folderPath)) continue;
+
+      const files = fs.readdirSync(folderPath);
+      const cfg   = IMAGE_CONFIG[folder] || IMAGE_CONFIG.default;
+
+      for (const fname of files) {
+        // Skip already-webp files that are small (already processed)
+        if (fname.endsWith('.webp')) continue;
+
+        const ext = path.extname(fname).toLowerCase();
+        if (!['.jpg', '.jpeg', '.png', '.gif'].includes(ext)) continue;
+
+        const inPath  = path.join(folderPath, fname);
+        const outName = `${path.basename(fname, ext)}.webp`;
+        const outPath = path.join(folderPath, outName);
+
+        try {
+          const before = fs.statSync(inPath).size;
+
+          await sharp(inPath)
+            .rotate()
+            .resize(cfg.width, cfg.height, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: cfg.quality })
+            .toFile(outPath);
+
+          const after = fs.statSync(outPath).size;
+          savedBytes += (before - after);
+          processed++;
+
+          // Remove original
+          fs.unlinkSync(inPath);
+          this.logger.log(`Recompressed: ${folder}/${fname} → ${outName} (saved ${((before - after) / 1024).toFixed(0)} KB)`);
+        } catch (e: any) {
+          errors.push(`${folder}/${fname}: ${e.message}`);
+        }
+      }
+    }
+
+    return {
+      processed,
+      saved:  Math.round(savedBytes / 1024),  // KB saved
+      errors,
+    };
   }
 }
